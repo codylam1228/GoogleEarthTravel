@@ -4,8 +4,9 @@
 <div align="center">
   <img src="https://i0.wp.com/techpressionmedia.com/wp-content/uploads/2024/02/Google-Earth-1.jpg" width="60%" alt="Google Earth" />
 </div>
+
 ## Overview
-This project is tutorial for the google map timeline issue. Also provide a simple tool about converting the json file to kml file.
+- This project is tutorial for the google map timeline issue. Also provide a simple tool about converting the json file to kml file.
 
 ## Precursor
 - You need to turn on the google map timeline [https://support.google.com/maps/answer/6258979?hl=en&co=GENIE.Platform%3DAndroid]
