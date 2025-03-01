@@ -50,13 +50,15 @@ In some unexpected cases the line will be missed, so you may also need to add th
 - gpsvisualizer
 
 Reference:
-Codylam Github google earth
-```https://github.com/codylam1228/GoogleEarthTravel```
+
 用 Google Maps 自動規畫路徑的方法
 ```https://medium.com/fogofworld-hant/%E7%94%A8-google-maps-%E8%87%AA%E5%8B%95%E8%A6%8F%E7%95%AB%E8%B7%AF%E5%BE%91%E7%9A%84%E6%96%B9%E6%B3%95-3eac7fcfb6bb```
+
 用 Google Earth 補交通運輸路徑的方法
 ```https://medium.com/fogofworld-hant/%E7%94%A8-google-earth-%E8%A3%9C%E4%BA%A4%E9%80%9A%E9%81%8B%E8%BC%B8%E8%B7%AF%E5%BE%91%E7%9A%84%E6%96%B9%E6%B3%95-e1f96fda552f```
+
 Json to kml
 ```https://www.gpsvisualizer.com/map_input?form=googleearth```
+
 用 FlightAware 補飛機路徑的方法
 ```https://medium.com/fogofworld-hant/%E7%94%A8-flightaware-%E8%A3%9C%E9%A3%9B%E6%A9%9F%E8%B7%AF%E5%BE%91%E7%9A%84%E6%96%B9%E6%B3%95-5d323057ad4a```
