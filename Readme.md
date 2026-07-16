@@ -8,45 +8,62 @@
 
 # Travel Track Recorder and Google Earth SOP
 
-This project provides a simple local workflow for recording travel tracks with **Open GPX Tracker**, converting exported GPX files into KML files, and displaying the results in **Google Earth**.
+This project provides a local workflow for converting travel-location data into KML files for viewing in Google Earth.
 
-The workflow does not require Google Maps Timeline, a cloud database, a continuously running server, or Docker. All track processing is performed locally on the computer.
+It supports two input sources:
+
+- **GPX files** exported from Open GPX Tracker on iPhone or Apple Watch
+- **JSON files** exported from Google Maps Timeline
+
+The workflow does not require a cloud database, a continuously running server, Docker, or a third-party online conversion service. All conversion is performed locally on the computer.
 
 ```text
-Open GPX Tracker
-        ↓
-Export GPX after a trip
-        ↓
-Place GPX in input/
-        ↓
-Run the Python conversion script with uv
-        ↓
-Get KML in output/
-        ↓
+Open GPX Tracker / Google Maps Timeline
+                ↓
+Export GPX or JSON file
+                ↓
+Place file in input/
+                ↓
+Run convert.py with uv
+                ↓
+KML file created in output/
+                ↓
 Import KML into Google Earth
 ```
 
+## Supported Input Formats
+
+| Input format | Source | KML output |
+|---|---|---|
+| `.gpx` | Open GPX Tracker | GPS track lines and manually added waypoints |
+| `.json` | Google Maps Timeline export | Activity start/end lines and visit location markers |
+
+> [!NOTE]
+> GPX files contain detailed GPS trackpoints, so their KML output represents the actual recorded travel path.
+>
+> The supported Google Maps Timeline JSON format only contains activity start and end coordinates. Therefore, each activity is displayed as a straight line, not the actual road, railway, or walking route.
+
 ## Prerequisites
 
-Before using this workflow, prepare the following:
+Prepare the following before using this project:
 
-- An iPhone or Apple Watch with [Open GPX Tracker](https://apps.apple.com/us/app/open-gpx-tracker/id984503772)
-- A computer with Python and [uv](https://docs.astral.sh/uv/)
-- Google Earth or Google Earth Pro
+- An iPhone or Apple Watch with [Open GPX Tracker](https://apps.apple.com/us/app/open-gpx-tracker/id984503772), if recording new travel tracks
+- A computer with [uv](https://docs.astral.sh/uv/) installed
+- Google Earth Web or Google Earth Pro
 - This project repository, including `convert.py`
 
-Google Earth supports opening and importing KML files. See the official [Google Earth KML import guide](https://support.google.com/earth/answer/7365595?hl=en) for more information.
+Google Earth supports local KML files and can import KML/KMZ data into a Google Earth project.
 
 ## Project Structure
 
-The project folder should have the following structure:
+The project directory must use the following structure:
 
 ```text
 GoogleEarthTravel/
-├── input/          # Add newly exported GPX files here
+├── input/          # Add GPX or Google Timeline JSON files here
 ├── output/         # Generated KML files are saved here
-├── archive/        # Successfully processed GPX files are moved here
-├── convert.py      # GPX-to-KML conversion script
+├── archive/        # Successfully processed source files are moved here
+├── convert.py      # GPX/JSON-to-KML conversion script
 ├── pyproject.toml
 └── uv.lock
 ```
@@ -67,13 +84,13 @@ mkdir input, output, archive
 
 ## Initial Setup
 
-Install the Python dependencies once from the project root directory:
+Install the project dependencies once from the project root directory:
 
 ```bash
 uv sync
 ```
 
-If the project has not been configured yet, install the required packages:
+If `pyproject.toml` does not yet contain the dependencies, run:
 
 ```bash
 uv add gpxpy simplekml
@@ -81,11 +98,15 @@ uv add gpxpy simplekml
 
 ## SOP: Record a Travel Track
 
-### Step 1: Create a New Track
+This section applies to new trips recorded with Open GPX Tracker.
 
-1. Open **Open GPX Tracker** on the iPhone or Apple Watch.
+### Step 1: Create a Track
+
+1. Open **Open GPX Tracker** on an iPhone or Apple Watch.
 2. Create a new track.
-3. Give the track a name, such as:
+3. Give the track a meaningful name.
+
+Example:
 
 ```text
 2026-07-16_Tokyo_Asakusa-Shibuya
@@ -93,11 +114,11 @@ uv add gpxpy simplekml
 
 4. Press **Record** or **Start** before beginning the journey.
 
-### Step 2: Add Important Waypoints
+### Step 2: Add Waypoints
 
-During the journey, add a waypoint whenever you reach an important location.
+During the journey, add a waypoint whenever you arrive at an important location.
 
-Examples include:
+Suggested waypoint types:
 
 - Hotel
 - Airport
@@ -107,17 +128,26 @@ Examples include:
 - Hiking checkpoint
 - Meeting point
 
+Recommended waypoint names:
 
-Each waypoint will be exported to the GPX file and displayed as a point in Google Earth.
+```text
+Hotel Check-in
+Tokyo Station
+Lunch - Sushi Restaurant
+Senso-ji Temple
+Shibuya Crossing
+```
 
-### Step 3: Stop and Save the Track
+Waypoints are exported with the GPX file and displayed as location markers in Google Earth.
+
+### Step 3: Stop and Save
 
 At the end of the journey:
 
 1. Stop the recording.
 2. Save the track.
 3. Review the track and waypoints if necessary.
-4. Export the saved track as a GPX file.
+4. Export the completed track as a GPX file.
 
 Recommended filename format:
 
@@ -133,30 +163,81 @@ Examples:
 2026-07-18_Okinawa_Naha-Walk.gpx
 ```
 
-## SOP: Export GPX from Open GPX Tracker
+## SOP: Export GPX
 
 1. Open the completed track in Open GPX Tracker.
-2. Select the **Share** or **Export** action.
+2. Select **Share** or **Export**.
 3. Choose the **GPX** format.
-4. Transfer the file to the computer using one of the following methods:
-   - AirDrop
-   - iCloud Drive
-   - Files app
-   - Email
-   - USB file transfer
+4. Transfer the file to the computer using AirDrop, iCloud Drive, Files, email, or USB transfer.
 5. Copy the exported `.gpx` file into the project `input/` folder.
 
 Example:
 
 ```text
-travel-track-project/
+GoogleEarthTravel/
 └── input/
     └── 2026-07-16_Tokyo_Asakusa-Shibuya.gpx
 ```
 
-## SOP: Convert GPX to KML
+## SOP: Export Google Timeline JSON
 
-From the project root directory, run:
+This section is for importing historical location data from Google Maps Timeline.
+
+1. Open Google Maps Timeline settings on the mobile device.
+2. Export the Timeline data as a JSON file.
+3. Transfer the exported JSON file to the computer.
+4. Copy the `.json` file into the project `input/` folder.
+
+Example:
+
+```text
+GoogleEarthTravel/
+└── input/
+    └── location-history.json
+```
+
+The currently supported Google Timeline JSON structure is a top-level JSON array containing records such as:
+
+```json
+[
+  {
+    "startTime": "2025-12-21T20:49:49.103+08:00",
+    "endTime": "2025-12-21T20:54:50.103+08:00",
+    "activity": {
+      "start": "geo:22.339023,114.202798",
+      "end": "geo:22.334279,114.195603",
+      "distanceMeters": "908.833374",
+      "topCandidate": {
+        "type": "in passenger vehicle",
+        "probability": "0.547723"
+      }
+    }
+  }
+]
+```
+
+> [!WARNING]
+> Do not modify, truncate, or manually copy only part of the exported JSON file.
+>
+> The source file must be complete valid JSON, beginning with `[` and ending with `]`.
+
+## SOP: Convert GPX or JSON to KML
+
+Place one or more supported files in `input/`.
+
+Example:
+
+```text
+GoogleEarthTravel/
+├── input/
+│   ├── 2026-07-16_Tokyo_Asakusa-Shibuya.gpx
+│   └── location-history.json
+├── output/
+├── archive/
+└── convert.py
+```
+
+Run the converter from the project root directory:
 
 ```bash
 uv run python convert.py
@@ -164,31 +245,66 @@ uv run python convert.py
 
 The script will automatically:
 
-1. Find all `.gpx` files in `input/`
-2. Convert each GPX file into an individual KML file
-3. Save generated KML files in `output/`
-4. Move successfully processed GPX files to `archive/`
-5. Keep failed GPX files in `input/` for troubleshooting
+1. Find all `.gpx` and `.json` files in `input/`
+2. Detect each file type automatically
+3. Convert each supported file into an individual KML file
+4. Save generated KML files in `output/`
+5. Move successfully processed source files to `archive/`
+6. Keep failed source files in `input/` for troubleshooting
 
-Example result:
+Example terminal output:
 
 ```text
-travel-track-project/
+Found 2 supported file(s).
+------------------------------------------------------------
+SUCCESS: 2026-07-16_Tokyo_Asakusa-Shibuya.gpx
+  Type:    GPX
+  GPX segments converted: 1
+  GPX waypoints converted: 6
+  KML:     output\2026-07-16_Tokyo_Asakusa-Shibuya.kml
+  Archive: archive\2026-07-16_Tokyo_Asakusa-Shibuya_20260716_220000.gpx
+------------------------------------------------------------
+SUCCESS: location-history.json
+  Type:    JSON
+  Timeline activities converted: 125
+  Timeline visits converted: 92
+  Timeline records skipped: 0
+  KML:     output\location-history.kml
+  Archive: archive\location-history_20260716_220000.json
+------------------------------------------------------------
+Finished. Success: 2, Failed: 0
+```
+
+## Output and Archive
+
+After successful conversion, the directory structure will look similar to this:
+
+```text
+GoogleEarthTravel/
 ├── input/
 ├── output/
-│   └── 2026-07-16_Tokyo_Asakusa-Shibuya.kml
-└── archive/
-    └── 2026-07-16_Tokyo_Asakusa-Shibuya_20260716_223000.gpx
+│   ├── 2026-07-16_Tokyo_Asakusa-Shibuya.kml
+│   └── location-history.kml
+├── archive/
+│   ├── 2026-07-16_Tokyo_Asakusa-Shibuya_20260716_220000.gpx
+│   └── location-history_20260716_220000.json
+├── convert.py
+├── pyproject.toml
+└── uv.lock
 ```
+
+Source files are moved to `archive/` only after a valid non-empty KML file has been created.
+
+If conversion fails, the source file remains in `input/`.
 
 ## SOP: Import KML into Google Earth
 
 ### Google Earth Web
 
 1. Open [Google Earth](https://earth.google.com/web/).
-2. Create a new project, or open an existing project.
+2. Create a new project or open an existing project.
 3. Select **New feature** or **Import file**.
-4. Select the generated KML file from the `output/` folder.
+4. Select a `.kml` file from the `output/` folder.
 5. Wait for the file to load.
 6. Save the Google Earth project if required.
 
@@ -196,16 +312,16 @@ travel-track-project/
 
 1. Open Google Earth Pro.
 2. Select **File** → **Open**.
-3. Select the generated `.kml` file in the `output/` folder.
-4. The track and waypoints will appear in the left-side **Places** panel.
-5. Drag the KML file into **My Places** if you want to keep it available after restarting Google Earth Pro.
+3. Select a `.kml` file from the `output/` folder.
+4. The KML content appears in the left-side **Places** panel.
+5. Drag the imported item into **My Places** to keep it after restarting Google Earth Pro.
 
-## KML Display Structure
+## KML Structure: GPX Files
 
-Each generated KML file contains separate folders for tracks and waypoints:
+KML files generated from GPX contain separate folders for recorded travel tracks and manually added waypoints.
 
 ```text
-Trip Name
+2026-07-16_Tokyo_Asakusa-Shibuya
 ├── Tracks
 │   └── Track 1
 └── Waypoints
@@ -215,23 +331,108 @@ Trip Name
     └── Senso-ji Temple
 ```
 
-This allows tracks and waypoints to be shown or hidden separately in Google Earth.
+This lets you show or hide route lines and waypoint markers independently.
 
-## Notes
+## KML Structure: Timeline JSON
 
-- Start recording only when the journey begins to reduce unnecessary GPS points and battery usage.
+KML files generated from Google Timeline JSON contain separate folders for activities and visits.
+
+```text
+location-history
+├── Activities (straight lines)
+│   ├── Activity 1: in passenger vehicle
+│   ├── Activity 3: in subway
+│   └── Activity 5: walking
+└── Visits
+    ├── Visit 2: Unknown
+    ├── Visit 4: Unknown
+    └── Visit 6: Unknown
+```
+
+### Activity Output
+
+Each Timeline activity contains:
+
+- Start time and end time
+- Activity type, such as `in passenger vehicle` or `in subway`
+- Google confidence score
+- Distance estimate
+- A line between the provided start and end coordinates
+
+### Visit Output
+
+Each Timeline visit contains:
+
+- Arrival and departure time
+- Duration
+- Semantic type, if available
+- Google Place ID, if available
+- Google confidence score
+- A location marker
+
+## Important Notes
+
+- Start GPX recording only when the journey begins to reduce unnecessary GPS points and battery usage.
 - Stop recording immediately after the journey ends.
 - GPS accuracy may be reduced indoors, underground, in tunnels, or near dense high-rise buildings.
-- Use waypoints to mark important places instead of relying only on the track line.
+- Use waypoints to mark important places during GPX recording.
 - Keep one GPX file per day or per travel activity for easier management.
-- Keep the original GPX files in `archive/` as the source data.
-- The generated KML files can also be opened by other GIS tools that support KML, such as QGIS.
+- Keep original GPX and JSON files in `archive/` as source data.
+- The script processes only files directly inside `input/`; it does not scan subfolders.
+- The script supports `.gpx`, `.GPX`, `.json`, and `.JSON` filenames.
+- GPX output shows detailed routes because GPX contains trackpoints.
+- Google Timeline JSON output may show straight lines because the exported activity records may contain only start and end coordinates.
+- Generated KML files can also be opened using GIS tools that support KML, such as QGIS.
 
-## What We Used
+## Troubleshooting
+
+### No files are found
+
+Check that the source files are located directly inside:
+
+```text
+GoogleEarthTravel/input/
+```
+
+Supported extensions are:
+
+```text
+.gpx
+.GPX
+.json
+.JSON
+```
+
+### A file is processed twice
+
+Use the latest version of `convert.py`.
+
+The script scans the `input/` folder once and checks extensions with case-insensitive matching, preventing Windows from treating `.gpx` and `.GPX` as separate file matches.
+
+### JSON conversion fails
+
+Check that the JSON file is complete and valid.
+
+A valid Timeline JSON export should:
+
+- Begin with `[`
+- End with `]`
+- Contain complete JSON objects
+- Use `activity` and/or `visit` records
+- Include `geo:latitude,longitude` coordinate values
+
+### Google Earth shows a straight line
+
+This is expected for some Google Maps Timeline JSON exports.
+
+The file may contain only the start coordinate and end coordinate of an activity, rather than all intermediate GPS trackpoints. Use Open GPX Tracker for future trips when detailed route geometry is required.
+
+## Technologies Used
 
 - [Open GPX Tracker](https://apps.apple.com/us/app/open-gpx-tracker/id984503772)
 - [uv](https://docs.astral.sh/uv/)
-- Python
+    - Python
+        - [gpxpy](https://github.com/tkrajina/gpxpy)
+        - [simplekml](https://simplekml.readthedocs.io/)
+- Google Maps Timeline
 - Google Earth
-- KML
-- GPX
