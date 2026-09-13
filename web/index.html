@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Earth Travel - All-in-One Web Suite</title>
+    <title>Google Earth Travel Web Suite</title>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 30px auto; padding: 20px; background: #f9f9f9; }
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; position: relative; }
         .drop-zone { border: 2px dashed #007bff; padding: 30px; text-align: center; border-radius: 8px; cursor: pointer; background: #f0f7ff; }
         .drop-zone.hover { background: #e2f0ff; border-color: #0056b3; }
         .btn { display: inline-block; padding: 10px 20px; background: #28a745; color: white; border-radius: 5px; cursor: pointer; border: none; text-decoration: none; font-size: 16px; }
         .btn-earth { background: #4285f4; margin-left: 10px; }
+        .lang-btn { position: absolute; top: 20px; right: 20px; background: #6c757d; color: white; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 14px; }
         select, input { padding: 10px; margin: 8px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
         #status { font-weight: bold; color: #333; margin-top: 10px; }
         .error { color: #dc3545; }
@@ -21,39 +22,39 @@
 <body>
 
     <div class="card">
-        <h2>🌍 GoogleEarthTravel All-in-One Web Suite</h2>
-        <p>100% Client-side processing (Pyodide WebAssembly). No server uploads.</p>
+        <button class="lang-btn" id="langToggle">繁體中文</button>
+        <h2 id="appTitle">🌍 GoogleEarthTravel All-in-One Web Suite</h2>
+        <p id="appSub">100% Client-side processing (Pyodide WebAssembly). No server uploads.</p>
         <div id="status">⏳ Loading Python WASM Runtime...</div>
     </div>
 
     <div class="card">
-        <h3>Step 1: Select Operation</h3>
+        <h3 id="step1Title">Step 1: Select Operation</h3>
         <select id="modeSelect">
-            <option value="gpx">1. GPX to KML</option>
-            <option value="json">2. Google Timeline JSON to KML</option>
-            <option value="prune">3. Prune KML by Date</option>
-            <option value="repair">4. Repair KML Track</option>
-            <option value="split">5. Split KML Track</option>
+            <option value="gpx">1. GPX to KML Converter</option>
+            <option value="json">2. Google Timeline JSON to KML Converter</option>
+            <option value="repair">3. Repair GPX Track</option>
+            <option value="split">4. Split GPX Track</option>
         </select>
 
-        <div id="dateInputGroup" style="display:none; margin-top: 10px;">
-            <label for="targetDate"><strong>Target Date Filter (e.g., YYYY-MM-DD):</strong></label>
-            <input type="text" id="targetDate" placeholder="2026-04-15">
+        <div id="splitLimitGroup" style="display:none; margin-top: 10px;">
+            <label for="splitLimit"><strong id="splitLimitLabel">Max Points per Split Segment:</strong></label>
+            <input type="number" id="splitLimit" value="1500" min="10">
         </div>
     </div>
 
     <div class="card">
-        <h3>Step 2: Upload File</h3>
+        <h3 id="step2Title">Step 2: Upload File</h3>
         <div class="drop-zone" id="dropZone">
-            Click to upload or drag & drop file (.gpx / .json / .kml)
-            <input type="file" id="fileInput" style="display: none;">
+            <span id="dropText">Click to upload or drag & drop file (.gpx / .json)</span>
+            <input type="file" id="fileInput" accept=".gpx,.json" style="display: none;">
         </div>
     </div>
 
     <div class="card" id="actionArea" style="display: none;">
-        <h3>Step 3: Export Result</h3>
+        <h3 id="step3Title">Step 3: Export Result</h3>
         <button class="btn" id="downloadBtn">📥 Download Converted .KML</button>
-        <a href="https://earth.google.com/web/" target="_blank" class="btn btn-earth">🚀 Open Google Earth Web</a>
+        <a href="https://earth.google.com/web/" target="_blank" class="btn btn-earth" id="earthBtn">🚀 Open Google Earth Web</a>
     </div>
 
     <script>
@@ -61,7 +62,7 @@
 import xml.etree.ElementTree as ET
 import json
 
-def process_file(file_content, mode, target_date=""):
+def process_file(file_content, mode, split_limit=1500):
     if mode == "gpx":
         ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
@@ -102,96 +103,149 @@ def process_file(file_content, mode, target_date=""):
                         kml_body.append(f"  <Placemark>\\n    <name>Activity</name>\\n    <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>\\n  </Placemark>")
         return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
-    elif mode == "prune":
-        try:
-            root = ET.fromstring(file_content)
-        except Exception as e:
-            return f"Error parsing KML: {str(e)}"
-        
-        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
-        
-        for parent in root.findall('.//kml:Document', ns) + root.findall('.//kml:Folder', ns):
-            for pm in list(parent.findall('kml:Placemark', ns)):
-                text = "".join(pm.itertext())
-                if target_date and target_date not in text:
-                    parent.remove(pm)
-        return ET.tostring(root, encoding='utf-8').decode('utf-8')
-
     elif mode == "repair":
+        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
             root = ET.fromstring(file_content)
         except Exception as e:
-            return f"Error parsing KML: {str(e)}"
+            return f"Error parsing GPX: {str(e)}"
 
-        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
+        coords = []
+        for trkpt in root.findall('.//gpx:trkpt', ns):
+            lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
+            if lat and lon:
+                coords.append(f"{lon},{lat},0")
 
-        for coords_elem in root.findall('.//kml:coordinates', ns):
-            if coords_elem.text:
-                valid = []
-                for c in coords_elem.text.strip().split():
-                    parts = c.split(',')
-                    if len(parts) >= 2:
-                        try:
-                            valid.append(f"{float(parts[0])},{float(parts[1])},0")
-                        except ValueError:
-                            continue
-                coords_elem.text = " ".join(valid)
-        return ET.tostring(root, encoding='utf-8').decode('utf-8')
+        if not coords:
+            return "Error: No valid GPS trackpoints found in GPX file."
+
+        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Repaired GPX Track</name>\\n'
+        kml_footer = '</Document>\\n</kml>'
+        kml_body = f"  <Placemark>\\n    <name>Repaired Track</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{' '.join(coords)}</coordinates></LineString>\\n  </Placemark>"
+        return kml_header + kml_body + "\\n" + kml_footer
 
     elif mode == "split":
+        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
             root = ET.fromstring(file_content)
         except Exception as e:
-            return f"Error parsing KML: {str(e)}"
+            return f"Error parsing GPX: {str(e)}"
 
-        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
+        coords = []
+        for trkpt in root.findall('.//gpx:trkpt', ns):
+            lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
+            if lat and lon:
+                coords.append(f"{lon},{lat},0")
 
-        for parent in root.findall('.//kml:Document', ns):
-            for pm in list(parent.findall('kml:Placemark', ns)):
-                coords_elem = pm.find('.//kml:coordinates', ns)
-                if coords_elem is not None and coords_elem.text:
-                    coords = coords_elem.text.strip().split()
-                    if len(coords) > 200:
-                        folder = ET.Element('{http://www.opengis.net/kml/2.2}Folder')
-                        f_name = ET.SubElement(folder, '{http://www.opengis.net/kml/2.2}name')
-                        f_name.text = "Splitted Tracks"
-                        
-                        chunk_size = 150
-                        for i in range(0, len(coords), chunk_size):
-                            sub_pm = ET.SubElement(folder, '{http://www.opengis.net/kml/2.2}Placemark')
-                            sub_name = ET.SubElement(sub_pm, '{http://www.opengis.net/kml/2.2}name')
-                            sub_name.text = f"Part {i//chunk_size + 1}"
-                            ls = ET.SubElement(sub_pm, '{http://www.opengis.net/kml/2.2}LineString')
-                            c_elem = ET.SubElement(ls, '{http://www.opengis.net/kml/2.2}coordinates')
-                            c_elem.text = " ".join(coords[i:i+chunk_size])
-                        
-                        parent.remove(pm)
-                        parent.append(folder)
-        return ET.tostring(root, encoding='utf-8').decode('utf-8')
+        if not coords:
+            return "Error: No valid GPS trackpoints found in GPX file."
+
+        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Split GPX Track</name>\\n'
+        kml_footer = '</Document>\\n</kml>'
+        kml_body = []
+
+        chunk_size = int(split_limit)
+        for i in range(0, len(coords), chunk_size):
+            chunk = coords[i:i + chunk_size]
+            coord_str = " ".join(chunk)
+            part_num = (i // chunk_size) + 1
+            kml_body.append(f"  <Placemark>\\n    <name>Track Segment Part {part_num}</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>\\n  </Placemark>")
+
+        return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
     return "Invalid mode"
 `;
 
+        const translations = {
+            en: {
+                toggleBtn: "繁體中文",
+                appTitle: "🌍 GoogleEarthTravel All-in-One Web Suite",
+                appSub: "100% Client-side processing (Pyodide WebAssembly). No server uploads.",
+                statusLoading: "⏳ Loading Python WASM Runtime...",
+                statusReady: "✅ Ready. Pyodide loaded.",
+                statusProcessing: "⚙️ Processing...",
+                step1Title: "Step 1: Select Operation",
+                step2Title: "Step 2: Upload File",
+                step3Title: "Step 3: Export Result",
+                splitLimitLabel: "Max Points per Split Segment:",
+                dropText: "Click to upload or drag & drop file (.gpx / .json)",
+                downloadBtn: "📥 Download Converted .KML",
+                earthBtn: "🚀 Open Google Earth Web",
+                options: [
+                    "1. GPX to KML Converter",
+                    "2. Google Timeline JSON to KML Converter",
+                    "3. Repair GPX Track",
+                    "4. Split GPX Track"
+                ]
+            },
+            zh: {
+                toggleBtn: "English",
+                appTitle: "🌍 GoogleEarthTravel 全功能網頁工具",
+                appSub: "100% 本地客戶端處理 (Pyodide WebAssembly)，無需上傳伺服器。",
+                statusLoading: "⏳ 正在載入 Python WASM 運行環境...",
+                statusReady: "✅ 準備就緒。Pyodide 已成功載入。",
+                statusProcessing: "⚙️ 處理中...",
+                step1Title: "第一步：選擇操作項目",
+                step2Title: "第二步：上傳檔案",
+                step3Title: "第三步：匯出結果",
+                splitLimitLabel: "每個切分軌跡段的最大點數限制：",
+                dropText: "點擊上傳或將檔案拖放至此 (.gpx / .json)",
+                downloadBtn: "📥 下載轉換後的 .KML 檔案",
+                earthBtn: "🚀 開啟 Google Earth 網頁版",
+                options: [
+                    "1. GPX 轉 KML 轉換器",
+                    "2. Google Timeline JSON 轉 KML 轉換器",
+                    "3. 修復 GPX 軌跡 (Repair)",
+                    "4. 切分 GPX 軌跡 (Split)"
+                ]
+            }
+        };
+
+        let currentLang = 'en';
         let pyodide = null;
         let convertedData = "";
         let outputFileName = "output.kml";
 
+        const langToggle = document.getElementById('langToggle');
         const statusEl = document.getElementById('status');
         const modeSelect = document.getElementById('modeSelect');
-        const dateInputGroup = document.getElementById('dateInputGroup');
+        const splitLimitGroup = document.getElementById('splitLimitGroup');
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const actionArea = document.getElementById('actionArea');
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            const t = translations[lang];
+            langToggle.innerText = t.toggleBtn;
+            document.getElementById('appTitle').innerText = t.appTitle;
+            document.getElementById('appSub').innerText = t.appSub;
+            document.getElementById('step1Title').innerText = t.step1Title;
+            document.getElementById('step2Title').innerText = t.step2Title;
+            document.getElementById('step3Title').innerText = t.step3Title;
+            document.getElementById('splitLimitLabel').innerText = t.splitLimitLabel;
+            document.getElementById('dropText').innerText = t.dropText;
+            document.getElementById('downloadBtn').innerText = t.downloadBtn;
+            document.getElementById('earthBtn').innerText = t.earthBtn;
+
+            for (let i = 0; i < modeSelect.options.length; i++) {
+                modeSelect.options[i].text = t.options[i];
+            }
+            if (pyodide) {
+                statusEl.innerText = t.statusReady;
+            }
+        }
+
+        langToggle.onclick = () => {
+            setLanguage(currentLang === 'en' ? 'zh' : 'en');
+        };
 
         async function initPyodide() {
             try {
                 pyodide = await loadPyodide();
                 pyodide.runPython(pythonCoreScript);
                 statusEl.className = "success";
-                statusEl.innerText = "✅ Ready. Pyodide loaded.";
+                statusEl.innerText = translations[currentLang].statusReady;
             } catch (err) {
                 statusEl.className = "error";
                 statusEl.innerText = "❌ Load failed: " + err.message;
@@ -200,7 +254,7 @@ def process_file(file_content, mode, target_date=""):
         initPyodide();
 
         modeSelect.addEventListener('change', () => {
-            dateInputGroup.style.display = (modeSelect.value === 'prune') ? 'block' : 'none';
+            splitLimitGroup.style.display = (modeSelect.value === 'split') ? 'block' : 'none';
         });
 
         dropZone.onclick = () => fileInput.click();
@@ -217,16 +271,27 @@ def process_file(file_content, mode, target_date=""):
         async function handleFile(file) {
             if (!file || !pyodide) return;
 
-            const mode = modeSelect.value;
-            const targetDate = document.getElementById('targetDate').value.trim();
+            const fileExt = file.name.split('.').pop().toLowerCase();
+            if (fileExt === 'kml') {
+                alert(currentLang === 'zh' ? "不支援 .kml 檔案上傳！請上傳 .gpx 或 .json 檔案。" : "KML files are not supported for upload! Please upload a .gpx or .json file.");
+                return;
+            }
 
-            if (mode === 'prune' && !targetDate) {
-                alert("Please fill in the target date filter.");
+            const mode = modeSelect.value;
+            const splitLimit = parseInt(document.getElementById('splitLimit').value, 10) || 1500;
+
+            if ((mode === 'repair' || mode === 'split' || mode === 'gpx') && fileExt !== 'gpx') {
+                alert(currentLang === 'zh' ? "此模式僅支援 .gpx 檔案！" : "This mode only supports .gpx files!");
+                return;
+            }
+
+            if (mode === 'json' && fileExt !== 'json') {
+                alert(currentLang === 'zh' ? "此模式僅支援 .json 檔案！" : "This mode only supports .json files!");
                 return;
             }
 
             statusEl.className = "";
-            statusEl.innerText = "⚙️ Processing...";
+            statusEl.innerText = translations[currentLang].statusProcessing;
             actionArea.style.display = "none";
 
             setTimeout(async () => {
@@ -235,9 +300,9 @@ def process_file(file_content, mode, target_date=""):
                     
                     pyodide.globals.set("f_content", content);
                     pyodide.globals.set("f_mode", mode);
-                    pyodide.globals.set("f_date", targetDate);
+                    pyodide.globals.set("f_limit", splitLimit);
 
-                    convertedData = pyodide.runPython("process_file(f_content, f_mode, f_date)");
+                    convertedData = pyodide.runPython("process_file(f_content, f_mode, f_limit)");
 
                     if (convertedData.startsWith("Error")) {
                         throw new Error(convertedData);
@@ -245,7 +310,7 @@ def process_file(file_content, mode, target_date=""):
 
                     outputFileName = file.name.replace(/\.[^/.]+$/, "") + `_${mode}.kml`;
                     statusEl.className = "success";
-                    statusEl.innerText = `✅ Success! Output ready: ${outputFileName}`;
+                    statusEl.innerText = (currentLang === 'zh' ? "✅ 成功！輸出完成：" : "✅ Success! Output ready: ") + outputFileName;
                     actionArea.style.display = "block";
                 } catch (err) {
                     statusEl.className = "error";

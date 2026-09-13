@@ -15,9 +15,9 @@ How it works:
      With --points-per-part N it also writes part files of max N points.
 
 Usage:
-    python repair_kml_track.py paste.txt
-    python repair_kml_track.py broken.kml --gap-minutes 30 --out fixed.kml
-    python repair_kml_track.py broken.kml --points-per-part 2000 --overlap 1
+    uv run python repair_kml_track.py paste.txt
+    uv run python repair_kml_track.py broken.kml --gap-minutes 30 --out fixed.kml
+    uv run python repair_kml_track.py broken.kml --points-per-part 2000 --overlap 1
 """
 
 import argparse
