@@ -31,23 +31,23 @@
     <div class="card">
         <h3 id="step1Title">Step 1: Select Operation</h3>
         <select id="modeSelect">
-            <option value="gpx">1. GPX to KML Converter</option>
-            <option value="json">2. Google Timeline JSON to KML Converter</option>
-            <option value="repair">3. Repair GPX Track</option>
-            <option value="split">4. Split GPX Track</option>
+            <option value="gpx">1. GPX to KML Converter (.gpx)</option>
+            <option value="json">2. Google Timeline JSON to KML Converter (.json)</option>
+            <option value="repair">3. Repair KML Track (.kml)</option>
+            <option value="split">4. Split KML Track (.kml)</option>
         </select>
 
         <div id="splitLimitGroup" style="display:none; margin-top: 10px;">
             <label for="splitLimit"><strong id="splitLimitLabel">Max Points per Split Segment:</strong></label>
-            <input type="number" id="splitLimit" value="1500" min="10">
+            <input type="number" id="splitLimit" value="2000" min="10">
         </div>
     </div>
 
     <div class="card">
         <h3 id="step2Title">Step 2: Upload File</h3>
         <div class="drop-zone" id="dropZone">
-            <span id="dropText">Click to upload or drag & drop file (.gpx / .json)</span>
-            <input type="file" id="fileInput" accept=".gpx,.json" style="display: none;">
+            <span id="dropText">Click to upload or drag & drop file (.gpx)</span>
+            <input type="file" id="fileInput" accept=".gpx" style="display: none;">
         </div>
     </div>
 
@@ -61,8 +61,13 @@
         const pythonCoreScript = `
 import xml.etree.ElementTree as ET
 import json
+import re
 
-def process_file(file_content, mode, split_limit=1500):
+KML = "http://www.opengis.net/kml/2.2"
+GX = "http://www.google.com/kml/ext/2.2"
+NS = {"k": KML, "gx": GX}
+
+def process_file(file_content, mode, split_limit=2000):
     if mode == "gpx":
         ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
@@ -70,8 +75,14 @@ def process_file(file_content, mode, split_limit=1500):
         except Exception as e:
             return f"Error parsing GPX: {str(e)}"
 
-        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Converted Track</name>\\n'
-        kml_footer = '</Document>\\n</kml>'
+        kml_header = '''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Converted Track</name>
+    <Style id="trackStyle">
+      <LineStyle><color>ff0000ff</color><width>4</width></LineStyle>
+    </Style>\\n'''
+        kml_footer = '  </Document>\\n</kml>'
         kml_body = []
 
         for trk in root.findall('.//gpx:trk', ns):
@@ -79,7 +90,7 @@ def process_file(file_content, mode, split_limit=1500):
                 coords = [f"{pt.attrib.get('lon')},{pt.attrib.get('lat')},0" for pt in trkseg.findall('gpx:trkpt', ns) if 'lon' in pt.attrib and 'lat' in pt.attrib]
                 if coords:
                     coord_str = " ".join(coords)
-                    kml_body.append(f"  <Placemark>\\n    <name>Track Segment</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>\\n  </Placemark>")
+                    kml_body.append(f"    <Placemark>\\n      <name>Track Segment</name>\\n      <styleUrl>#trackStyle</styleUrl>\\n      <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>\\n    </Placemark>")
         return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
     elif mode == "json":
@@ -88,8 +99,14 @@ def process_file(file_content, mode, split_limit=1500):
         except Exception as e:
             return f"Error parsing JSON: {str(e)}"
         
-        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Timeline Track</name>\\n'
-        kml_footer = '</Document>\\n</kml>'
+        kml_header = '''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Timeline Track</name>
+    <Style id="trackStyle">
+      <LineStyle><color>ff0000ff</color><width>4</width></LineStyle>
+    </Style>\\n'''
+        kml_footer = '  </Document>\\n</kml>'
         kml_body = []
 
         if isinstance(data, list):
@@ -100,58 +117,92 @@ def process_file(file_content, mode, split_limit=1500):
                     if isinstance(s_geo, str) and isinstance(e_geo, str) and s_geo.startswith("geo:") and e_geo.startswith("geo:"):
                         s_lat, s_lon = s_geo[4:].split(",", 1)
                         e_lat, e_lon = e_geo[4:].split(",", 1)
-                        kml_body.append(f"  <Placemark>\\n    <name>Activity</name>\\n    <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>\\n  </Placemark>")
+                        kml_body.append(f"    <Placemark>\\n      <name>Activity</name>\\n      <styleUrl>#trackStyle</styleUrl>\\n      <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>\\n    </Placemark>")
         return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
     elif mode == "repair":
-        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
             root = ET.fromstring(file_content)
         except Exception as e:
-            return f"Error parsing GPX: {str(e)}"
+            return f"Error parsing KML: {str(e)}"
 
-        coords = []
-        for trkpt in root.findall('.//gpx:trkpt', ns):
-            lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
-            if lat and lon:
-                coords.append(f"{lon},{lat},0")
+        points = []
+        for pm in root.iter(f"{{{KML}}}Placemark"):
+            track = pm.find(".//gx:Track", NS)
+            if track is not None:
+                coords = [c.text.strip().replace(" ", ",") for c in track.findall("gx:coord", NS) if c.text]
+                points.extend(coords)
+            else:
+                coord_el = pm.find(".//k:LineString/k:coordinates", NS)
+                if coord_el is not None and coord_el.text:
+                    points.extend(coord_el.text.strip().split())
 
-        if not coords:
-            return "Error: No valid GPS trackpoints found in GPX file."
+        if not points:
+            return "Error: No track points found in KML."
 
-        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Repaired GPX Track</name>\\n'
-        kml_footer = '</Document>\\n</kml>'
-        kml_body = f"  <Placemark>\\n    <name>Repaired Track</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{' '.join(coords)}</coordinates></LineString>\\n  </Placemark>"
-        return kml_header + kml_body + "\\n" + kml_footer
+        kml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="{KML}" xmlns:gx="{GX}">
+<Document>
+  <name>Repaired KML Track</name>
+  <Style id="track"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>
+  <Placemark>
+    <name>Repaired Route</name>
+    <styleUrl>#track</styleUrl>
+    <LineString>
+      <altitudeMode>clampToGround</altitudeMode>
+      <tessellate>1</tessellate>
+      <coordinates>{" ".join(points)}</coordinates>
+    </LineString>
+  </Placemark>
+</Document>
+</kml>'''
+        return kml
 
     elif mode == "split":
-        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
         try:
             root = ET.fromstring(file_content)
         except Exception as e:
-            return f"Error parsing GPX: {str(e)}"
+            return f"Error parsing KML: {str(e)}"
 
-        coords = []
-        for trkpt in root.findall('.//gpx:trkpt', ns):
-            lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
-            if lat and lon:
-                coords.append(f"{lon},{lat},0")
+        points = []
+        for pm in root.iter(f"{{{KML}}}Placemark"):
+            track = pm.find(".//gx:Track", NS)
+            if track is not None:
+                coords = [c.text.strip().replace(" ", ",") for c in track.findall("gx:coord", NS) if c.text]
+                points.extend(coords)
+            else:
+                coord_el = pm.find(".//k:LineString/k:coordinates", NS)
+                if coord_el is not None and coord_el.text:
+                    points.extend(coord_el.text.strip().split())
 
-        if not coords:
-            return "Error: No valid GPS trackpoints found in GPX file."
-
-        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Split GPX Track</name>\\n'
-        kml_footer = '</Document>\\n</kml>'
-        kml_body = []
+        if not points:
+            return "Error: No track points found in KML."
 
         chunk_size = int(split_limit)
-        for i in range(0, len(coords), chunk_size):
-            chunk = coords[i:i + chunk_size]
-            coord_str = " ".join(chunk)
-            part_num = (i // chunk_size) + 1
-            kml_body.append(f"  <Placemark>\\n    <name>Track Segment Part {part_num}</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>\\n  </Placemark>")
+        placemarks = []
 
-        return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
+        for i in range(0, len(points), chunk_size):
+            chunk = points[i:i + chunk_size]
+            part_num = (i // chunk_size) + 1
+            placemarks.append(f'''  <Placemark>
+    <name>Track Part {part_num}</name>
+    <styleUrl>#track</styleUrl>
+    <LineString>
+      <altitudeMode>clampToGround</altitudeMode>
+      <tessellate>1</tessellate>
+      <coordinates>{" ".join(chunk)}</coordinates>
+    </LineString>
+  </Placemark>''')
+
+        kml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="{KML}" xmlns:gx="{GX}">
+<Document>
+  <name>Split KML Track</name>
+  <Style id="track"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>
+\\n{"\\n".join(placemarks)}
+</Document>
+</kml>'''
+        return kml
 
     return "Invalid mode"
 `;
@@ -168,14 +219,19 @@ def process_file(file_content, mode, split_limit=1500):
                 step2Title: "Step 2: Upload File",
                 step3Title: "Step 3: Export Result",
                 splitLimitLabel: "Max Points per Split Segment:",
-                dropText: "Click to upload or drag & drop file (.gpx / .json)",
+                dropTexts: {
+                    gpx: "Click to upload or drag & drop file (.gpx)",
+                    json: "Click to upload or drag & drop file (.json)",
+                    repair: "Click to upload or drag & drop file (.kml)",
+                    split: "Click to upload or drag & drop file (.kml)"
+                },
                 downloadBtn: "📥 Download Converted .KML",
                 earthBtn: "🚀 Open Google Earth Web",
                 options: [
-                    "1. GPX to KML Converter",
-                    "2. Google Timeline JSON to KML Converter",
-                    "3. Repair GPX Track",
-                    "4. Split GPX Track"
+                    "1. GPX to KML Converter (.gpx)",
+                    "2. Google Timeline JSON to KML Converter (.json)",
+                    "3. Repair KML Track (.kml)",
+                    "4. Split KML Track (.kml)"
                 ]
             },
             zh: {
@@ -189,14 +245,19 @@ def process_file(file_content, mode, split_limit=1500):
                 step2Title: "第二步：上傳檔案",
                 step3Title: "第三步：匯出結果",
                 splitLimitLabel: "每個切分軌跡段的最大點數限制：",
-                dropText: "點擊上傳或將檔案拖放至此 (.gpx / .json)",
+                dropTexts: {
+                    gpx: "點擊上傳或將檔案拖放至此 (.gpx)",
+                    json: "點擊上傳或將檔案拖放至此 (.json)",
+                    repair: "點擊上傳或將檔案拖放至此 (.kml)",
+                    split: "點擊上傳或將檔案拖放至此 (.kml)"
+                },
                 downloadBtn: "📥 下載轉換後的 .KML 檔案",
                 earthBtn: "🚀 開啟 Google Earth 網頁版",
                 options: [
-                    "1. GPX 轉 KML 轉換器",
-                    "2. Google Timeline JSON 轉 KML 轉換器",
-                    "3. 修復 GPX 軌跡 (Repair)",
-                    "4. 切分 GPX 軌跡 (Split)"
+                    "1. GPX 轉 KML 轉換器 (.gpx)",
+                    "2. Google Timeline JSON 轉 KML 轉換器 (.json)",
+                    "3. 修復 KML 軌跡 (.kml)",
+                    "4. 切分 KML 軌跡 (.kml)"
                 ]
             }
         };
@@ -211,8 +272,19 @@ def process_file(file_content, mode, split_limit=1500):
         const modeSelect = document.getElementById('modeSelect');
         const splitLimitGroup = document.getElementById('splitLimitGroup');
         const dropZone = document.getElementById('dropZone');
+        const dropText = document.getElementById('dropText');
         const fileInput = document.getElementById('fileInput');
         const actionArea = document.getElementById('actionArea');
+
+        function updateAcceptTypes() {
+            const mode = modeSelect.value;
+            splitLimitGroup.style.display = (mode === 'split') ? 'block' : 'none';
+            dropText.innerText = translations[currentLang].dropTexts[mode];
+
+            if (mode === 'gpx') fileInput.accept = ".gpx";
+            else if (mode === 'json') fileInput.accept = ".json";
+            else if (mode === 'repair' || mode === 'split') fileInput.accept = ".kml";
+        }
 
         function setLanguage(lang) {
             currentLang = lang;
@@ -224,13 +296,13 @@ def process_file(file_content, mode, split_limit=1500):
             document.getElementById('step2Title').innerText = t.step2Title;
             document.getElementById('step3Title').innerText = t.step3Title;
             document.getElementById('splitLimitLabel').innerText = t.splitLimitLabel;
-            document.getElementById('dropText').innerText = t.dropText;
             document.getElementById('downloadBtn').innerText = t.downloadBtn;
             document.getElementById('earthBtn').innerText = t.earthBtn;
 
             for (let i = 0; i < modeSelect.options.length; i++) {
                 modeSelect.options[i].text = t.options[i];
             }
+            updateAcceptTypes();
             if (pyodide) {
                 statusEl.innerText = t.statusReady;
             }
@@ -253,9 +325,7 @@ def process_file(file_content, mode, split_limit=1500):
         }
         initPyodide();
 
-        modeSelect.addEventListener('change', () => {
-            splitLimitGroup.style.display = (modeSelect.value === 'split') ? 'block' : 'none';
-        });
+        modeSelect.addEventListener('change', updateAcceptTypes);
 
         dropZone.onclick = () => fileInput.click();
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
@@ -271,24 +341,23 @@ def process_file(file_content, mode, split_limit=1500):
         async function handleFile(file) {
             if (!file || !pyodide) return;
 
-            const fileExt = file.name.split('.').pop().toLowerCase();
-            if (fileExt === 'kml') {
-                alert(currentLang === 'zh' ? "不支援 .kml 檔案上傳！請上傳 .gpx 或 .json 檔案。" : "KML files are not supported for upload! Please upload a .gpx or .json file.");
-                return;
-            }
-
             const mode = modeSelect.value;
-            const splitLimit = parseInt(document.getElementById('splitLimit').value, 10) || 1500;
+            const fileExt = file.name.split('.').pop().toLowerCase();
 
-            if ((mode === 'repair' || mode === 'split' || mode === 'gpx') && fileExt !== 'gpx') {
-                alert(currentLang === 'zh' ? "此模式僅支援 .gpx 檔案！" : "This mode only supports .gpx files!");
+            if ((mode === 'repair' || mode === 'split') && fileExt !== 'kml') {
+                alert(currentLang === 'zh' ? "此模式僅支援上傳 .kml 檔案！" : "This mode requires a .kml file!");
                 return;
             }
-
+            if (mode === 'gpx' && fileExt !== 'gpx') {
+                alert(currentLang === 'zh' ? "此模式僅支援上傳 .gpx 檔案！" : "This mode requires a .gpx file!");
+                return;
+            }
             if (mode === 'json' && fileExt !== 'json') {
-                alert(currentLang === 'zh' ? "此模式僅支援 .json 檔案！" : "This mode only supports .json files!");
+                alert(currentLang === 'zh' ? "此模式僅支援上傳 .json 檔案！" : "This mode requires a .json file!");
                 return;
             }
+
+            const splitLimit = parseInt(document.getElementById('splitLimit').value, 10) || 2000;
 
             statusEl.className = "";
             statusEl.innerText = translations[currentLang].statusProcessing;
