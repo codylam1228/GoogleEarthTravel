@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Earth Travel - All-in-One Web Suite</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 30px auto; padding: 20px; background: #f9f9f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .drop-zone { border: 2px dashed #007bff; padding: 30px; text-align: center; border-radius: 8px; cursor: pointer; background: #f0f7ff; }
+        .drop-zone.hover { background: #e2f0ff; border-color: #0056b3; }
+        .btn { display: inline-block; padding: 10px 20px; background: #28a745; color: white; border-radius: 5px; cursor: pointer; border: none; text-decoration: none; font-size: 16px; }
+        .btn-earth { background: #4285f4; margin-left: 10px; }
+        select, input { padding: 10px; margin: 8px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        #status { font-weight: bold; color: #333; margin-top: 10px; }
+        .error { color: #dc3545; }
+        .success { color: #28a745; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>🌍 GoogleEarthTravel All-in-One Web Suite</h2>
+        <p>100% 瀏覽器端處理，零資料上傳，安全且免費。</p>
+        <div id="status">⏳ 正在載入 Python WASM 環境...</div>
+    </div>
+
+    <div class="card">
+        <h3>Step 1: 選擇處理工具 (Mode Selection)</h3>
+        <select id="modeSelect">
+            <option value="gpx">1. GPX 轉 KML (GPX Tracker)</option>
+            <option value="json">2. Google Timeline JSON 轉 KML</option>
+            <option value="prune">3. KML 按日期剪裁 (Prune by Date)</option>
+        </select>
+
+        <div id="dateInputGroup" style="display:none;">
+            <label for="targetDate"><strong>目標日期 (格式 YYYY-MM-DD 或 DD-MMM-YYYY):</strong></label>
+            <input type="text" id="targetDate" placeholder="例如: 2026-08-15 或 15-Aug-2026">
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Step 2: 上傳檔案 (Upload File)</h3>
+        <div class="drop-zone" id="dropZone">
+            點擊選擇檔案 或 將檔案 (.gpx / .json / .kml) 拖曳至此處
+            <input type="file" id="fileInput" style="display: none;">
+        </div>
+    </div>
+
+    <div class="card" id="actionArea" style="display: none;">
+        <h3>Step 3: 匯出與檢視 (Export & Visualize)</h3>
+        <button class="btn" id="downloadBtn">📥 下載處理後的 .KML 檔案</button>
+        <a href="https://earth.google.com/web/" target="_blank" class="btn btn-earth">🚀 開啟 Google Earth Web</a>
+    </div>
+
+    <script>
+        // 將 Python 邏輯內嵌，防止 Localhost 讀取檔路徑失敗
+        const pythonCoreScript = `
+import xml.etree.ElementTree as ET
+import json
+import re
+
+def convert_gpx_to_kml(gpx_string):
+    ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+    try:
+        root = ET.fromstring(gpx_string)
+    except Exception as e:
+        return f"Error parsing GPX XML: {str(e)}"
+
+    kml_header = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Google Earth Travel Track</name>
+    <Style id="trackStyle">
+      <LineStyle><color>ff0000ff</color><width>4</width></LineStyle>
+    </Style>"""
+    kml_footer = "  </Document>\\n</kml>"
+    kml_body = []
+
+    # Waypoints
+    for wpt in root.findall('.//gpx:wpt', ns):
+        lat, lon = wpt.attrib.get('lat'), wpt.attrib.get('lon')
+        name_elem = wpt.find('gpx:name', ns)
+        name = name_elem.text if name_elem is not None else "Waypoint"
+        kml_body.append(f"""    <Placemark>
+      <name>{name}</name>
+      <Point><coordinates>{lon},{lat},0</coordinates></Point>
+    </Placemark>""")
+
+    # Tracks
+    for trk in root.findall('.//gpx:trk', ns):
+        for trkseg in trk.findall('gpx:trkseg', ns):
+            coords = []
+            for trkpt in trkseg.findall('gpx:trkpt', ns):
+                lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
+                coords.append(f"{lon},{lat},0")
+            if coords:
+                coord_str = " ".join(coords)
+                kml_body.append(f"""    <Placemark>
+      <name>Route Track</name>
+      <styleUrl>#trackStyle</styleUrl>
+      <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>
+    </Placemark>""")
+
+    return kml_header + "\\n" + "\\n".join(kml_body) + "\\n" + kml_footer
+
+def convert_timeline_json_to_kml(json_string):
+    try:
+        data = json.loads(json_string)
+    except Exception as e:
+        return f"Error parsing JSON: {str(e)}"
+
+    if not isinstance(data, list):
+        return "Error: Expected JSON top-level array [ {...}, {...} ]"
+
+    kml_header = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Google Timeline Track</name>"""
+    kml_footer = "  </Document>\\n</kml>"
+    kml_body = []
+
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if "activity" in item:
+            act = item["activity"]
+            start_geo, end_geo = act.get("start", ""), act.get("end", "")
+            if isinstance(start_geo, str) and start_geo.startswith("geo:") and isinstance(end_geo, str) and end_geo.startswith("geo:"):
+                s_lat, s_lon = start_geo[4:].split(",", 1)
+                e_lat, e_lon = end_geo[4:].split(",", 1)
+                kml_body.append(f"""    <Placemark>
+      <name>Activity</name>
+      <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>
+    </Placemark>""")
+        elif "visit" in item:
+            visit = item["visit"]
+            cand = visit.get("topCandidate", {}) if isinstance(visit, dict) else {}
+            loc = cand.get("placeLocation", "")
+            if isinstance(loc, str) and loc.startswith("geo:"):
+                lat, lon = loc[4:].split(",", 1)
+                kml_body.append(f"""    <Placemark>
+      <name>Visit</name>
+      <Point><coordinates>{lon},{lat},0</coordinates></Point>
+    </Placemark>""")
+
+    return kml_header + "\\n" + "\\n".join(kml_body) + "\\n" + kml_footer
+
+def prune_kml_by_date(kml_string, target_date_str):
+    try:
+        root = ET.fromstring(kml_string)
+    except Exception as e:
+        return f"Error parsing KML: {str(e)}"
+
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
+    
+    removed = 0
+    # 搜尋所有 Document 或 Folder 下的 Placemark
+    for parent in root.findall('.//kml:Document', ns) + root.findall('.//kml:Folder', ns):
+        for pm in list(parent.findall('kml:Placemark', ns)):
+            text_content = "".join(pm.itertext())
+            if target_date_str and target_date_str not in text_content:
+                parent.remove(pm)
+                removed += 1
+
+    return ET.tostring(root, encoding='utf-8').decode('utf-8')
+`;
+
+        let pyodide = null;
+        let convertedData = "";
+        let outputFileName = "output.kml";
+
+        const statusEl = document.getElementById('status');
+        const modeSelect = document.getElementById('modeSelect');
+        const dateInputGroup = document.getElementById('dateInputGroup');
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const actionArea = document.getElementById('actionArea');
+
+        // 初始化 Pyodide
+        async function initPyodide() {
+            try {
+                pyodide = await loadPyodide();
+                pyodide.runPython(pythonCoreScript);
+                statusEl.className = "success";
+                statusEl.innerText = "✅ 系統就緒！請選擇模式並上傳檔案。";
+            } catch (err) {
+                statusEl.className = "error";
+                statusEl.innerText = "❌ 載入 Pyodide 失敗: " + err.message;
+            }
+        }
+        initPyodide();
+
+        modeSelect.onchange = () => {
+            dateInputGroup.style.display = modeSelect.value === 'prune' ? 'block' : 'none';
+        };
+
+        dropZone.onclick = () => fileInput.click();
+        
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('hover');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('hover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        };
+
+        fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+        async function handleFile(file) {
+            if (!file) return;
+            if (!pyodide) {
+                alert("Pyodide 環境尚未載入完成，請稍候！");
+                return;
+            }
+
+            statusEl.className = "";
+            statusEl.innerText = "⚙️ 正在處理中...";
+            actionArea.style.display = "none";
+
+            // 使用 setTimeout 讓 UI 能即時渲染 "⚙️ 正在處理中..."
+            setTimeout(async () => {
+                try {
+                    const content = await file.text();
+                    const mode = modeSelect.value;
+                    
+                    pyodide.globals.set("file_content", content);
+
+                    if (mode === 'gpx') {
+                        convertedData = pyodide.runPython("convert_gpx_to_kml(file_content)");
+                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + ".kml";
+                    } else if (mode === 'json') {
+                        convertedData = pyodide.runPython("convert_timeline_json_to_kml(file_content)");
+                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + ".kml";
+                    } else if (mode === 'prune') {
+                        const targetDate = document.getElementById('targetDate').value.trim();
+                        if (!targetDate) {
+                            throw new Error("請輸入目標剪裁日期！");
+                        }
+                        pyodide.globals.set("target_date", targetDate);
+                        convertedData = pyodide.runPython("prune_kml_by_date(file_content, target_date)");
+                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + "_pruned.kml";
+                    }
+
+                    if (convertedData.startsWith("Error")) {
+                        throw new Error(convertedData);
+                    }
+
+                    statusEl.className = "success";
+                    statusEl.innerText = `✅ 處理完成！檔名：${outputFileName}`;
+                    actionArea.style.display = "block";
+                } catch (err) {
+                    statusEl.className = "error";
+                    statusEl.innerText = "❌ 處理失敗: " + err.message;
+                }
+            }, 50);
+        }
+
+        document.getElementById('downloadBtn').onclick = () => {
+            const blob = new Blob([convertedData], { type: 'application/vnd.google-earth.kml+xml' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = outputFileName;
+            a.click();
+        };
+    </script>
+</body>
+</html>
