@@ -22,150 +22,157 @@
 
     <div class="card">
         <h2>🌍 GoogleEarthTravel All-in-One Web Suite</h2>
-        <p>100% 瀏覽器端處理，零資料上傳，安全且免費。</p>
-        <div id="status">⏳ 正在載入 Python WASM 環境...</div>
+        <p>100% Client-side processing (Pyodide WebAssembly). No server uploads.</p>
+        <div id="status">⏳ Loading Python WASM Runtime...</div>
     </div>
 
     <div class="card">
-        <h3>Step 1: 選擇處理工具 (Mode Selection)</h3>
+        <h3>Step 1: Select Operation</h3>
         <select id="modeSelect">
-            <option value="gpx">1. GPX 轉 KML (GPX Tracker)</option>
-            <option value="json">2. Google Timeline JSON 轉 KML</option>
-            <option value="prune">3. KML 按日期剪裁 (Prune by Date)</option>
+            <option value="gpx">1. GPX to KML</option>
+            <option value="json">2. Google Timeline JSON to KML</option>
+            <option value="prune">3. Prune KML by Date</option>
+            <option value="repair">4. Repair KML Track</option>
+            <option value="split">5. Split KML Track</option>
         </select>
 
-        <div id="dateInputGroup" style="display:none;">
-            <label for="targetDate"><strong>目標日期 (格式 YYYY-MM-DD 或 DD-MMM-YYYY):</strong></label>
-            <input type="text" id="targetDate" placeholder="例如: 2026-08-15 或 15-Aug-2026">
+        <div id="dateInputGroup" style="display:none; margin-top: 10px;">
+            <label for="targetDate"><strong>Target Date Filter (e.g., YYYY-MM-DD):</strong></label>
+            <input type="text" id="targetDate" placeholder="2026-04-15">
         </div>
     </div>
 
     <div class="card">
-        <h3>Step 2: 上傳檔案 (Upload File)</h3>
+        <h3>Step 2: Upload File</h3>
         <div class="drop-zone" id="dropZone">
-            點擊選擇檔案 或 將檔案 (.gpx / .json / .kml) 拖曳至此處
+            Click to upload or drag & drop file (.gpx / .json / .kml)
             <input type="file" id="fileInput" style="display: none;">
         </div>
     </div>
 
     <div class="card" id="actionArea" style="display: none;">
-        <h3>Step 3: 匯出與檢視 (Export & Visualize)</h3>
-        <button class="btn" id="downloadBtn">📥 下載處理後的 .KML 檔案</button>
-        <a href="https://earth.google.com/web/" target="_blank" class="btn btn-earth">🚀 開啟 Google Earth Web</a>
+        <h3>Step 3: Export Result</h3>
+        <button class="btn" id="downloadBtn">📥 Download Converted .KML</button>
+        <a href="https://earth.google.com/web/" target="_blank" class="btn btn-earth">🚀 Open Google Earth Web</a>
     </div>
 
     <script>
-        // 將 Python 邏輯內嵌，防止 Localhost 讀取檔路徑失敗
         const pythonCoreScript = `
 import xml.etree.ElementTree as ET
 import json
-import re
 
-def convert_gpx_to_kml(gpx_string):
-    ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
-    try:
-        root = ET.fromstring(gpx_string)
-    except Exception as e:
-        return f"Error parsing GPX XML: {str(e)}"
+def process_file(file_content, mode, target_date=""):
+    if mode == "gpx":
+        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+        try:
+            root = ET.fromstring(file_content)
+        except Exception as e:
+            return f"Error parsing GPX: {str(e)}"
 
-    kml_header = """<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Google Earth Travel Track</name>
-    <Style id="trackStyle">
-      <LineStyle><color>ff0000ff</color><width>4</width></LineStyle>
-    </Style>"""
-    kml_footer = "  </Document>\\n</kml>"
-    kml_body = []
+        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Converted Track</name>\\n'
+        kml_footer = '</Document>\\n</kml>'
+        kml_body = []
 
-    # Waypoints
-    for wpt in root.findall('.//gpx:wpt', ns):
-        lat, lon = wpt.attrib.get('lat'), wpt.attrib.get('lon')
-        name_elem = wpt.find('gpx:name', ns)
-        name = name_elem.text if name_elem is not None else "Waypoint"
-        kml_body.append(f"""    <Placemark>
-      <name>{name}</name>
-      <Point><coordinates>{lon},{lat},0</coordinates></Point>
-    </Placemark>""")
+        for trk in root.findall('.//gpx:trk', ns):
+            for trkseg in trk.findall('gpx:trkseg', ns):
+                coords = [f"{pt.attrib.get('lon')},{pt.attrib.get('lat')},0" for pt in trkseg.findall('gpx:trkpt', ns) if 'lon' in pt.attrib and 'lat' in pt.attrib]
+                if coords:
+                    coord_str = " ".join(coords)
+                    kml_body.append(f"  <Placemark>\\n    <name>Track Segment</name>\\n    <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>\\n  </Placemark>")
+        return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
-    # Tracks
-    for trk in root.findall('.//gpx:trk', ns):
-        for trkseg in trk.findall('gpx:trkseg', ns):
-            coords = []
-            for trkpt in trkseg.findall('gpx:trkpt', ns):
-                lat, lon = trkpt.attrib.get('lat'), trkpt.attrib.get('lon')
-                coords.append(f"{lon},{lat},0")
-            if coords:
-                coord_str = " ".join(coords)
-                kml_body.append(f"""    <Placemark>
-      <name>Route Track</name>
-      <styleUrl>#trackStyle</styleUrl>
-      <LineString><tessellate>1</tessellate><coordinates>{coord_str}</coordinates></LineString>
-    </Placemark>""")
+    elif mode == "json":
+        try:
+            data = json.loads(file_content)
+        except Exception as e:
+            return f"Error parsing JSON: {str(e)}"
+        
+        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\\n<kml xmlns="http://www.opengis.net/kml/2.2">\\n<Document>\\n<name>Timeline Track</name>\\n'
+        kml_footer = '</Document>\\n</kml>'
+        kml_body = []
 
-    return kml_header + "\\n" + "\\n".join(kml_body) + "\\n" + kml_footer
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "activity" in item:
+                    act = item["activity"]
+                    s_geo, e_geo = act.get("start", ""), act.get("end", "")
+                    if isinstance(s_geo, str) and isinstance(e_geo, str) and s_geo.startswith("geo:") and e_geo.startswith("geo:"):
+                        s_lat, s_lon = s_geo[4:].split(",", 1)
+                        e_lat, e_lon = e_geo[4:].split(",", 1)
+                        kml_body.append(f"  <Placemark>\\n    <name>Activity</name>\\n    <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>\\n  </Placemark>")
+        return kml_header + "\\n".join(kml_body) + "\\n" + kml_footer
 
-def convert_timeline_json_to_kml(json_string):
-    try:
-        data = json.loads(json_string)
-    except Exception as e:
-        return f"Error parsing JSON: {str(e)}"
+    elif mode == "prune":
+        try:
+            root = ET.fromstring(file_content)
+        except Exception as e:
+            return f"Error parsing KML: {str(e)}"
+        
+        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
+        
+        for parent in root.findall('.//kml:Document', ns) + root.findall('.//kml:Folder', ns):
+            for pm in list(parent.findall('kml:Placemark', ns)):
+                text = "".join(pm.itertext())
+                if target_date and target_date not in text:
+                    parent.remove(pm)
+        return ET.tostring(root, encoding='utf-8').decode('utf-8')
 
-    if not isinstance(data, list):
-        return "Error: Expected JSON top-level array [ {...}, {...} ]"
+    elif mode == "repair":
+        try:
+            root = ET.fromstring(file_content)
+        except Exception as e:
+            return f"Error parsing KML: {str(e)}"
 
-    kml_header = """<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Google Timeline Track</name>"""
-    kml_footer = "  </Document>\\n</kml>"
-    kml_body = []
+        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
 
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        if "activity" in item:
-            act = item["activity"]
-            start_geo, end_geo = act.get("start", ""), act.get("end", "")
-            if isinstance(start_geo, str) and start_geo.startswith("geo:") and isinstance(end_geo, str) and end_geo.startswith("geo:"):
-                s_lat, s_lon = start_geo[4:].split(",", 1)
-                e_lat, e_lon = end_geo[4:].split(",", 1)
-                kml_body.append(f"""    <Placemark>
-      <name>Activity</name>
-      <LineString><coordinates>{s_lon},{s_lat},0 {e_lon},{e_lat},0</coordinates></LineString>
-    </Placemark>""")
-        elif "visit" in item:
-            visit = item["visit"]
-            cand = visit.get("topCandidate", {}) if isinstance(visit, dict) else {}
-            loc = cand.get("placeLocation", "")
-            if isinstance(loc, str) and loc.startswith("geo:"):
-                lat, lon = loc[4:].split(",", 1)
-                kml_body.append(f"""    <Placemark>
-      <name>Visit</name>
-      <Point><coordinates>{lon},{lat},0</coordinates></Point>
-    </Placemark>""")
+        for coords_elem in root.findall('.//kml:coordinates', ns):
+            if coords_elem.text:
+                valid = []
+                for c in coords_elem.text.strip().split():
+                    parts = c.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            valid.append(f"{float(parts[0])},{float(parts[1])},0")
+                        except ValueError:
+                            continue
+                coords_elem.text = " ".join(valid)
+        return ET.tostring(root, encoding='utf-8').decode('utf-8')
 
-    return kml_header + "\\n" + "\\n".join(kml_body) + "\\n" + kml_footer
+    elif mode == "split":
+        try:
+            root = ET.fromstring(file_content)
+        except Exception as e:
+            return f"Error parsing KML: {str(e)}"
 
-def prune_kml_by_date(kml_string, target_date_str):
-    try:
-        root = ET.fromstring(kml_string)
-    except Exception as e:
-        return f"Error parsing KML: {str(e)}"
+        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+        ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
 
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    ET.register_namespace('', 'http://www.opengis.net/kml/2.2')
-    
-    removed = 0
-    # 搜尋所有 Document 或 Folder 下的 Placemark
-    for parent in root.findall('.//kml:Document', ns) + root.findall('.//kml:Folder', ns):
-        for pm in list(parent.findall('kml:Placemark', ns)):
-            text_content = "".join(pm.itertext())
-            if target_date_str and target_date_str not in text_content:
-                parent.remove(pm)
-                removed += 1
+        for parent in root.findall('.//kml:Document', ns):
+            for pm in list(parent.findall('kml:Placemark', ns)):
+                coords_elem = pm.find('.//kml:coordinates', ns)
+                if coords_elem is not None and coords_elem.text:
+                    coords = coords_elem.text.strip().split()
+                    if len(coords) > 200:
+                        folder = ET.Element('{http://www.opengis.net/kml/2.2}Folder')
+                        f_name = ET.SubElement(folder, '{http://www.opengis.net/kml/2.2}name')
+                        f_name.text = "Splitted Tracks"
+                        
+                        chunk_size = 150
+                        for i in range(0, len(coords), chunk_size):
+                            sub_pm = ET.SubElement(folder, '{http://www.opengis.net/kml/2.2}Placemark')
+                            sub_name = ET.SubElement(sub_pm, '{http://www.opengis.net/kml/2.2}name')
+                            sub_name.text = f"Part {i//chunk_size + 1}"
+                            ls = ET.SubElement(sub_pm, '{http://www.opengis.net/kml/2.2}LineString')
+                            c_elem = ET.SubElement(ls, '{http://www.opengis.net/kml/2.2}coordinates')
+                            c_elem.text = " ".join(coords[i:i+chunk_size])
+                        
+                        parent.remove(pm)
+                        parent.append(folder)
+        return ET.tostring(root, encoding='utf-8').decode('utf-8')
 
-    return ET.tostring(root, encoding='utf-8').decode('utf-8')
+    return "Invalid mode"
 `;
 
         let pyodide = null;
@@ -179,26 +186,24 @@ def prune_kml_by_date(kml_string, target_date_str):
         const fileInput = document.getElementById('fileInput');
         const actionArea = document.getElementById('actionArea');
 
-        // 初始化 Pyodide
         async function initPyodide() {
             try {
                 pyodide = await loadPyodide();
                 pyodide.runPython(pythonCoreScript);
                 statusEl.className = "success";
-                statusEl.innerText = "✅ 系統就緒！請選擇模式並上傳檔案。";
+                statusEl.innerText = "✅ Ready. Pyodide loaded.";
             } catch (err) {
                 statusEl.className = "error";
-                statusEl.innerText = "❌ 載入 Pyodide 失敗: " + err.message;
+                statusEl.innerText = "❌ Load failed: " + err.message;
             }
         }
         initPyodide();
 
-        modeSelect.onchange = () => {
-            dateInputGroup.style.display = modeSelect.value === 'prune' ? 'block' : 'none';
-        };
+        modeSelect.addEventListener('change', () => {
+            dateInputGroup.style.display = (modeSelect.value === 'prune') ? 'block' : 'none';
+        });
 
         dropZone.onclick = () => fileInput.click();
-        
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('hover');
         dropZone.ondrop = (e) => {
@@ -210,50 +215,41 @@ def prune_kml_by_date(kml_string, target_date_str):
         fileInput.onchange = (e) => handleFile(e.target.files[0]);
 
         async function handleFile(file) {
-            if (!file) return;
-            if (!pyodide) {
-                alert("Pyodide 環境尚未載入完成，請稍候！");
+            if (!file || !pyodide) return;
+
+            const mode = modeSelect.value;
+            const targetDate = document.getElementById('targetDate').value.trim();
+
+            if (mode === 'prune' && !targetDate) {
+                alert("Please fill in the target date filter.");
                 return;
             }
 
             statusEl.className = "";
-            statusEl.innerText = "⚙️ 正在處理中...";
+            statusEl.innerText = "⚙️ Processing...";
             actionArea.style.display = "none";
 
-            // 使用 setTimeout 讓 UI 能即時渲染 "⚙️ 正在處理中..."
             setTimeout(async () => {
                 try {
                     const content = await file.text();
-                    const mode = modeSelect.value;
                     
-                    pyodide.globals.set("file_content", content);
+                    pyodide.globals.set("f_content", content);
+                    pyodide.globals.set("f_mode", mode);
+                    pyodide.globals.set("f_date", targetDate);
 
-                    if (mode === 'gpx') {
-                        convertedData = pyodide.runPython("convert_gpx_to_kml(file_content)");
-                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + ".kml";
-                    } else if (mode === 'json') {
-                        convertedData = pyodide.runPython("convert_timeline_json_to_kml(file_content)");
-                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + ".kml";
-                    } else if (mode === 'prune') {
-                        const targetDate = document.getElementById('targetDate').value.trim();
-                        if (!targetDate) {
-                            throw new Error("請輸入目標剪裁日期！");
-                        }
-                        pyodide.globals.set("target_date", targetDate);
-                        convertedData = pyodide.runPython("prune_kml_by_date(file_content, target_date)");
-                        outputFileName = file.name.replace(/\.[^/.]+$/, "") + "_pruned.kml";
-                    }
+                    convertedData = pyodide.runPython("process_file(f_content, f_mode, f_date)");
 
                     if (convertedData.startsWith("Error")) {
                         throw new Error(convertedData);
                     }
 
+                    outputFileName = file.name.replace(/\.[^/.]+$/, "") + `_${mode}.kml`;
                     statusEl.className = "success";
-                    statusEl.innerText = `✅ 處理完成！檔名：${outputFileName}`;
+                    statusEl.innerText = `✅ Success! Output ready: ${outputFileName}`;
                     actionArea.style.display = "block";
                 } catch (err) {
                     statusEl.className = "error";
-                    statusEl.innerText = "❌ 處理失敗: " + err.message;
+                    statusEl.innerText = "❌ Error: " + err.message;
                 }
             }, 50);
         }
